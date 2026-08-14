@@ -1,0 +1,516 @@
+{# ---------------------------------------------------------------
+   Mars UI Component Library  (shadcn-exact, server-rendered)
+
+   All macros mirror shadcn/ui's React primitives 1:1 — only the
+   syntax is swapped (React→Jinja2, cva→inline {% set %} maps).
+   See MARS_UI.md §4 for the canonical source.
+
+   Page templates: {% import "components/mars_ui.html" as ui %}
+--------------------------------------------------------------- #}
+
+{# 4.1 ui_card family — verbatim shadcn/ui card.tsx 1:1.
+   The shadcn <Card> is decomposed into 6 sub-components. We expose
+   all 6 PLUS the convenience ui_card(title="…", …) shortcut that
+   internally composes Root + Header + Title + Content so existing
+   call-sites don't have to change. #}
+{% macro ui_card_root(class="") %}
+<div class="rounded-xl border bg-card text-card-foreground shadow {{ class }}">
+  {{ caller() }}
+</div>
+{% endmacro %}
+
+{% macro ui_card_header(class="") %}
+<div class="flex flex-col space-y-1.5 p-6 {{ class }}">
+  {{ caller() }}
+</div>
+{% endmacro %}
+
+{% macro ui_card_title(class="") %}
+<h3 class="text-lg font-semibold leading-none tracking-tight {{ class }}">{{ caller() }}</h3>
+{% endmacro %}
+
+{% macro ui_card_description(class="") %}
+<p class="text-sm text-muted-foreground {{ class }}">{{ caller() }}</p>
+{% endmacro %}
+
+{% macro ui_card_content(class="") %}
+<div class="p-6 pt-0 {{ class }}">{{ caller() }}</div>
+{% endmacro %}
+
+{% macro ui_card_footer(class="") %}
+<div class="flex items-center p-6 pt-0 {{ class }}">{{ caller() }}</div>
+{% endmacro %}
+
+{# Convenience: the shadcn-equivalent of <Card><CardHeader><CardTitle>…</CardTitle></CardHeader><CardContent>…</CardContent></Card>.
+   Existing pages that pass title="…" don't need to change. #}
+{% macro ui_card(title=None, class="") %}
+<div class="rounded-xl border bg-card text-card-foreground shadow {{ class }}">
+  {% if title %}
+  <div class="flex flex-col space-y-1.5 p-6">
+    <h3 class="text-lg font-semibold leading-none tracking-tight">{{ title }}</h3>
+  </div>
+  {% endif %}
+  <div class="{{ 'p-6 pt-0' if title else 'p-6' }}">
+    {{ caller() }}
+  </div>
+</div>
+{% endmacro %}
+
+{# 4.2 ui_button — 6 variants × 4 sizes, identical to shadcn Button.
+   Loading feedback is the GLOBAL #global-spinner overlay (set in base.css),
+   not per-button: avoids conflict with disabled:pointer-events-none. #}
+{% macro ui_button(text, variant="default", size="default",
+                   hx_post=None, hx_get=None, hx_target=None, hx_swap=None,
+                   hx_confirm=None, type="button", extra_class="") %}
+{% set variant_class = {
+  "default":     "bg-primary text-primary-foreground hover:bg-primary/90",
+  "destructive": "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+  "outline":     "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
+  "secondary":   "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+  "ghost":       "hover:bg-accent hover:text-accent-foreground",
+  "link":        "text-primary underline-offset-4 hover:underline"
+} %}
+{% set size_class = {
+  "default": "h-9 px-4 py-2",
+  "sm":      "h-8 rounded-md px-3 text-xs",
+  "lg":      "h-10 rounded-md px-8",
+  "icon":    "h-9 w-9"
+} %}
+<button
+  type="{{ type }}"
+  class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-50 disabled:pointer-events-none {{ variant_class[variant] }} {{ size_class[size] }} {{ extra_class }}"
+  {% if hx_post %}hx-post="{{ hx_post }}"{% endif %}
+  {% if hx_get %}hx-get="{{ hx_get }}"{% endif %}
+  {% if hx_target %}hx-target="{{ hx_target }}"{% endif %}
+  {% if hx_swap %}hx-swap="{{ hx_swap }}"{% endif %}
+  {% if hx_confirm %}hx-confirm="{{ hx_confirm }}"{% endif %}
+  hx-indicator="#global-spinner">
+  <span>{{ text }}</span>
+</button>
+{% endmacro %}
+
+{# 4.3 ui_badge — rectangular (shadcn exact). Use ui_status_badge for ops status. #}
+{% macro ui_badge(variant="default", class="") %}
+{% set variant_class = {
+  "default":     "border-transparent bg-primary text-primary-foreground hover:bg-primary/80",
+  "secondary":   "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",
+  "destructive": "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80",
+  "outline":     "text-foreground border-border",
+  "success":     "border-transparent bg-success/15 text-success",
+  "warning":     "border-transparent bg-warning/15 text-warning",
+  "muted":       "border-transparent bg-muted text-muted-foreground"
+} %}
+<span class="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 {{ variant_class.get(variant, variant_class['default']) }} {{ class }}">
+  {{ caller() }}
+</span>
+{% endmacro %}
+
+{# Ops-status alias — shadcn-faithful: every status uses the `outline`
+   variant (transparent background) tinted with semantic color, NOT a
+   filled solid. This matches how real network-ops dashboards render
+   state pills (Meraki / Fortinet / Datadog). #}
+{% macro ui_status_badge(status) %}
+{% set tone = {
+  "UP":      "border-success/40 text-success",
+  "DOWN":    "border-destructive/40 text-destructive",
+  "WARNING": "border-warning/40 text-warning",
+  "UNKNOWN": "border-border text-muted-foreground bg-muted/30"
+} %}
+<span class="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 {{ tone.get(status, tone['UNKNOWN']) }}">
+  {{ status }}
+</span>
+{% endmacro %}
+
+{# Operation-result alias (logs page). Uses OUTLINE style to match
+   ui_status_badge — same rule: status indicators never get filled tones. #}
+{% macro ui_result_badge(result) %}
+{% set tone = {
+  "success": "border-success/40 text-success",
+  "failed":  "border-destructive/40 text-destructive",
+  "partial": "border-warning/40 text-warning"
+} %}
+{% set text = {"success":"Succeeded","failed":"Failed","partial":"Partial"} %}
+<span class="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 {{ tone.get(result, 'border-border text-muted-foreground bg-muted/30') }}">
+  {{ text.get(result, result) }}
+</span>
+{% endmacro %}
+
+{# 4.4 ui_table family — verbatim shadcn/ui Table.tsx 1:1.
+   IMPORTANT: the outer wrapper (ui_table) carries NO decoration — no
+   rounded-xl, no border, no bg-card. Decoration comes from the surrounding
+   <ui_card>. This mirrors shadcn's <Card><Table/></Card> pattern. #}
+{% macro ui_table(class="") %}
+<div class="relative w-full overflow-auto {{ class }}">
+  <table class="w-full caption-bottom text-sm">
+    {{ caller() }}
+  </table>
+</div>
+{% endmacro %}
+
+{% macro ui_thead(class="") %}
+<thead class="[&_tr]:border-b {{ class }}">
+  {{ caller() }}
+</thead>
+{% endmacro %}
+
+{% macro ui_tbody(id="", class="") %}
+<tbody {% if id %}id="{{ id }}"{% endif %} class="[&_tr:last-child]:border-0 {{ class }}">
+  {{ caller() }}
+</tbody>
+{% endmacro %}
+
+{% macro ui_tr(class="") %}
+<tr class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted {{ class }}">
+  {{ caller() }}
+</tr>
+{% endmacro %}
+
+{% macro ui_th(text, class="") %}
+<th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px] {{ class }}">{{ text }}</th>
+{% endmacro %}
+
+{% macro ui_td(class="") %}
+<td class="p-4 align-middle [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px] {{ class }}">{{ caller() }}</td>
+{% endmacro %}
+
+{# 4.5 ui_input / ui_select — shadcn standard (h-9, ring-2+offset) #}
+{% macro ui_input(name, label, type="text", value="", placeholder="", required=False, class="") %}
+<div class="flex flex-col gap-1.5">
+  <label for="{{ name }}" class="text-sm font-medium leading-none text-muted-foreground">{{ label }}</label>
+  <input
+    type="{{ type }}" id="{{ name }}" name="{{ name }}" value="{{ value }}"
+    placeholder="{{ placeholder }}" {% if required %}required{% endif %}
+    class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 {{ class }}" />
+</div>
+{% endmacro %}
+
+{% macro ui_select(name, label, options, selected=None, class="") %}
+<div class="flex flex-col gap-1.5">
+  <label for="{{ name }}" class="text-sm font-medium leading-none text-muted-foreground">{{ label }}</label>
+  <select id="{{ name }}" name="{{ name }}"
+    class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 {{ class }}">
+    {% for value, text in options %}
+    <option value="{{ value }}" {% if value == selected %}selected{% endif %}>{{ text }}</option>
+    {% endfor %}
+  </select>
+</div>
+{% endmacro %}
+
+{# 4.6 shadcn Alert family — verbatim alert.tsx 1:1.
+   Replaces the old single `ui_error_state`. Existing call-sites that
+   pass `ui.ui_error_state("…")` should migrate to the new
+   `ui_alert(variant="destructive")` shape. #}
+{% macro ui_alert(variant="default", class="") %}
+{% set variant_class = {
+  "default":     "bg-background text-foreground",
+  "destructive": "border-destructive/50 text-destructive dark:border-destructive [&>svg]:text-destructive"
+} %}
+<div role="alert" class="relative w-full rounded-lg border p-4 [&>svg~*]:pl-7 [&>svg+div]:translate-y-[-3px] [&>svg]:absolute [&>svg]:left-4 [&>svg]:top-4 [&>svg]:text-foreground {{ variant_class.get(variant, variant_class['default']) }} {{ class }}">
+  {{ caller() }}
+</div>
+{% endmacro %}
+
+{% macro ui_alert_title(class="") %}
+<h5 class="mb-1 font-medium leading-none tracking-tight {{ class }}">{{ caller() }}</h5>
+{% endmacro %}
+
+{% macro ui_alert_description(class="") %}
+<div class="text-sm [&_p]:leading-relaxed {{ class }}">{{ caller() }}</div>
+{% endmacro %}
+
+{# Back-compat shim so old call-sites keep working. Maps to destructive variant. #}
+{% macro ui_error_state(message="Operation failed — please retry") %}
+{% call ui_alert(variant="destructive") %}
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" class="h-4 w-4"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
+  {% call ui_alert_title() %}Error{% endcall %}
+  {% call ui_alert_description() %}{{ message }}{% endcall %}
+{% endcall %}
+{% endmacro %}
+
+{# 4.7 shadcn Empty family — verbatim empty.tsx 1:1 (added by shadcn 2024–2025).
+   <Empty>
+     <EmptyHeader>
+       <EmptyMedia variant="icon">…</EmptyMedia>
+       <EmptyTitle>No projects</EmptyTitle>
+       <EmptyDescription>…</EmptyDescription>
+     </EmptyHeader>
+     <EmptyContent>…</EmptyContent>
+     <EmptyFooter/>      (not always present)
+   </Empty> #}
+{% macro ui_empty_root(class="") %}
+<div class="flex min-h-[400px] flex-col items-center justify-center gap-6 rounded-lg border-dashed border p-6 text-center text-sm text-muted-foreground {{ class }}">
+  {{ caller() }}
+</div>
+{% endmacro %}
+
+{% macro ui_empty_header(class="") %}
+<div class="flex max-w-sm flex-col items-center gap-2 text-center {{ class }}">
+  {{ caller() }}
+</div>
+{% endmacro %}
+
+{% macro ui_empty_media(variant="default", class="") %}
+{% set variant_class = {
+  "default": "flex shrink-0 items-center justify-center [&_svg]:size-8 bg-transparent",
+  "icon":    "flex shrink-0 items-center justify-center [&_svg]:size-6 mb-2 [&_svg]:text-foreground bg-muted text-foreground rounded-md border border-border p-2"
+} %}
+<div class="{{ variant_class.get(variant, variant_class['default']) }} {{ class }}">
+  {{ caller() }}
+</div>
+{% endmacro %}
+
+{% macro ui_empty_title(class="") %}
+<h3 class="text-base font-semibold tracking-tight text-foreground {{ class }}">{{ caller() }}</h3>
+{% endmacro %}
+
+{% macro ui_empty_description(class="") %}
+<p class="text-sm text-muted-foreground {{ class }}">{{ caller() }}</p>
+{% endmacro %}
+
+{% macro ui_empty_content(class="") %}
+<div class="flex items-center justify-center gap-2 {{ class }}">{{ caller() }}</div>
+{% endmacro %}
+
+{# Back-compat shim for the old ui_empty_state. #}
+{% macro ui_empty_state(message="No data") %}
+{% call ui_empty_root() %}
+  {% call ui_empty_header() %}
+    {% call ui_empty_media(variant="icon") %}
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 13h6m-3-3v6m-7 4h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+    {% endcall %}
+    {% call ui_empty_title() %}{{ message }}{% endcall %}
+  {% endcall %}
+{% endcall %}
+{% endmacro %}
+
+{# 4.8 shadcn Skeleton primitive — verbatim skeleton.tsx 1:1 #}
+{% macro ui_skeleton(class="") %}
+<div class="animate-pulse rounded-md bg-muted/50 {{ class }}">{{ caller() }}</div>
+{% endmacro %}
+
+{# Row-level shortcut retained from MARS_UI v1. Now uses shadcn's
+   ui_skeleton primitive for each cell bar. The cells keep explicit
+   borders so skeletons fit inside the [ui_card] > [ui_table] pattern. #}
+{% macro ui_skeleton_row(cols=5) %}
+<tr class="animate-pulse">
+  {% for _ in range(cols) %}
+  <td class="p-4 align-middle [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]"><div class="h-4 w-full rounded-md bg-muted/50"></div></td>
+  {% endfor %}
+</tr>
+{% endmacro %}
+
+{# 4.9 shadcn Label primitive — verbatim label.tsx (peer-aware; pairs with
+   peer-disabled cursor/opacity). #}
+{# 4.10 shadcn Checkbox primitive — verbatim checkbox.tsx 1:1, but
+   implemented on top of plain <input type=checkbox> (no Radix). The
+   data-[state=checked] attribute is set/cleared via JS on change. #}
+{% macro ui_tr_checkbox(value, name="selected_ids", id="") %}
+{% set cb_id = id if id else "cb-" ~ value %}
+{# Internal helper: the shadcn-styled checkbox primitive. We use this
+   directly in row checkboxes (ui_tr_checkbox) plus any future inline
+   checkbox input. Not exposed in the spec — treated as an internal. #}
+<input type="checkbox" name="{{ name }}" value="{{ value }}" id="{{ cb_id }}"
+       role="checkbox"
+       class="peer h-4 w-4 shrink-0 rounded-sm border border-primary text-primary shadow focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground" />
+{% endmacro %}
+
+{# 4.11 shadcn Tabs family — verbatim tabs.tsx 1:1. Since Radix isn't
+   available, ui_tabs_trigger sets data-state="active" on click via
+   the JS bridge wired in base.html (see "mars-tabs" handler). #}
+{% macro ui_tabs(default_value="", class="") %}
+<div data-state="active" data-tabs-root
+     data-default-value="{{ default_value }}"
+     class="{{ class }}">
+  {{ caller() }}
+</div>
+{% endmacro %}
+
+{% macro ui_tabs_list(class="") %}
+<div role="tablist" class="inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground {{ class }}">
+  {{ caller() }}
+</div>
+{% endmacro %}
+
+{% macro ui_tabs_trigger(value="", class="") %}
+<button type="button" role="tab"
+        data-tabs-trigger
+        data-value="{{ value }}"
+        class="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow {{ class }}">
+  {{ caller() }}
+</button>
+{% endmacro %}
+
+{% macro ui_tabs_content(value="", class="") %}
+<div role="tabpanel"
+     data-tabs-content
+     data-value="{{ value }}"
+     class="mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 {{ class }}">
+  {{ caller() }}
+</div>
+{% endmacro %}
+
+{# 4.12 shadcn Pagination family — verbatim pagination.tsx 1:1.
+   ui_pagination takes a list of (label, href, active) tuples and
+   renders the canonical structure automatically. #}
+{% macro ui_pagination_root(class="") %}
+<nav role="navigation" aria-label="pagination" class="mx-auto flex w-full justify-center {{ class }}">
+  {{ caller() }}
+</nav>
+{% endmacro %}
+
+{% macro ui_pagination_content(class="") %}
+<ul class="flex flex-row items-center gap-1 {{ class }}">
+  {{ caller() }}
+</ul>
+{% endmacro %}
+
+{% macro ui_pagination_item(class="") %}
+<li class="{{ class }}">{{ caller() }}</li>
+{% endmacro %}
+
+{% macro ui_pagination_link(href="#", active=False, disabled=False, class="") %}
+<a href="{{ href }}"
+   {% if active %}aria-current="page" data-state="active"{% endif %}
+   class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 h-9 w-9 {% if active %}bg-primary text-primary-foreground hover:bg-primary/90{% endif %} {{ class }}">
+  {{ caller() }}
+</a>
+{% endmacro %}
+
+{% macro ui_pagination_previous(href="#", disabled=False, class="") %}
+<a href="{{ href }}" rel="prev"
+   {% if disabled %}aria-disabled="true" data-state="disabled"{% endif %}
+   class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 h-9 px-3 gap-1 {{ class }}">
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><path d="m15 18-6-6 6-6"/></svg>
+  <span>Previous</span>
+</a>
+{% endmacro %}
+
+{% macro ui_pagination_next(href="#", disabled=False, class="") %}
+<a href="{{ href }}" rel="next"
+   {% if disabled %}aria-disabled="true" data-state="disabled"{% endif %}
+   class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 h-9 px-3 gap-1 {{ class }}">
+  <span>Next</span>
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><path d="m9 18 6-6-6-6"/></svg>
+</a>
+{% endmacro %}
+
+{% macro ui_pagination_ellipsis(class="") %}
+<span aria-hidden="true" class="flex h-9 w-9 items-center justify-center {{ class }}">
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+  <span class="sr-only">More pages</span>
+</span>
+{% endmacro %}
+
+{# Convenience: render a full shadcn pagination from a list of pages. #}
+{% macro ui_pager(current=1, total=12, total_count="287 total", class="") %}
+{% call ui_pagination_root() %}
+  {% call ui_pagination_content(class=class) %}
+    {% call ui_pagination_item() %}
+      {{ ui_pagination_previous(disabled=(current <= 1), href="?page=" ~ (current - 1)|string) }}
+    {% endcall %}
+    {% call ui_pagination_item() %}
+      {% call ui_pagination_link(active=(current == 1), href="?page=1") %}1{% endcall %}
+    {% endcall %}
+    {% if total >= 2 %}
+    {% call ui_pagination_item() %}
+      {% call ui_pagination_link(active=(current == 2), href="?page=2") %}2{% endcall %}
+    {% endcall %}
+    {% endif %}
+    {% if total >= 3 %}
+    {% call ui_pagination_item() %}
+      {% call ui_pagination_link(active=(current == 3), href="?page=3") %}3{% endcall %}
+    {% endcall %}
+    {% endif %}
+    {% if total > 3 %}
+    {% call ui_pagination_item() %}
+      {{ ui_pagination_ellipsis() }}
+    {% endcall %}
+    {% call ui_pagination_item() %}
+      {% call ui_pagination_link(active=(current == total), href=("?page=" ~ total|string)) %}{{ total }}{% endcall %}
+    {% endcall %}
+    {% endif %}
+    {% call ui_pagination_item() %}
+      {{ ui_pagination_next(disabled=(current >= total), href="?page=" ~ (current + 1)|string) }}
+    {% endcall %}
+  {% endcall %}
+{% endcall %}
+<p class="mt-3 text-center text-xs text-muted-foreground">{{ total_count }} · Page {{ current }} of {{ total }}</p>
+{% endmacro %}
+
+{# ---------------------------------------------------------------
+   MARS_UI page-level helpers + shadcn Typography macros
+--------------------------------------------------------------- #}
+
+{# Theme toggle button (sun/moon icons). Always id="theme-toggle" so the
+   global no-flash + delegated handler in base.html can wire it up.
+   The wrapper class is filled by the caller — different in nav vs. floating
+   on a nav-less page (e.g. login). #}
+{% macro ui_theme_toggle(class="rounded-md border border-border bg-transparent px-2.5 py-1 text-card-foreground transition-all duration-200 hover:bg-accent") %}
+<button id="theme-toggle" type="button"
+        aria-label="Toggle theme"
+        class="{{ class }}">
+  <span data-icon="light">🌙</span>
+  <span data-icon="dark"  class="hidden">☀</span>
+</button>
+{% endmacro %}
+
+{% macro ui_page_header(title, subtitle="") %}
+<div class="flex items-end justify-between mb-6">
+  <div>
+    <h1 class="text-3xl font-semibold tracking-tight text-foreground">{{ title }}</h1>
+    {% if subtitle %}<p class="text-sm text-muted-foreground mt-1">{{ subtitle }}</p>{% endif %}
+  </div>
+  <div class="flex items-center gap-2">{{ caller() }}</div>
+</div>
+{% endmacro %}
+
+{% macro ui_kv(label, value) %}
+<div class="flex items-center justify-between py-2 border-b border-border last:border-b-0">
+  <span class="text-sm text-muted-foreground">{{ label }}</span>
+  <span class="text-sm text-foreground font-medium">{{ value }}</span>
+</div>
+{% endmacro %}
+
+{# shadcn Typography primitive — expose h1..h4 + lead + large / muted / small / blockquote macros.
+   Sizes/letterspacing taken verbatim from shadcn Typography docs. #}
+{% macro ui_h1(class="") %}
+<h1 class="scroll-m-20 text-4xl font-extrabold tracking-tight lg:text-5xl {{ class }}">{{ caller() }}</h1>
+{% endmacro %}
+
+{% macro ui_h2(class="") %}
+<h2 class="scroll-m-20 border-b pb-2 text-3xl font-semibold tracking-tight first:mt-0 {{ class }}">{{ caller() }}</h2>
+{% endmacro %}
+
+{% macro ui_h3(class="") %}
+<h3 class="scroll-m-20 text-2xl font-semibold tracking-tight {{ class }}">{{ caller() }}</h3>
+{% endmacro %}
+
+{% macro ui_h4(class="") %}
+<h4 class="scroll-m-20 text-xl font-semibold tracking-tight {{ class }}">{{ caller() }}</h4>
+{% endmacro %}
+
+{% macro ui_lead(class="") %}
+<p class="text-xl text-muted-foreground {{ class }}">{{ caller() }}</p>
+{% endmacro %}
+
+{% macro ui_large(class="") %}
+<div class="text-lg font-semibold {{ class }}">{{ caller() }}</div>
+{% endmacro %}
+
+{% macro ui_small(class="") %}
+<small class="text-sm font-medium leading-none {{ class }}">{{ caller() }}</small>
+{% endmacro %}
+
+{% macro ui_muted(class="") %}
+<p class="text-sm text-muted-foreground {{ class }}">{{ caller() }}</p>
+{% endmacro %}
+
+{% macro ui_inline_code(class="") %}
+{#
+  Inline code-styled pill. Uses <span> rather than <code> because the
+  browser UA + Tailwind preflight force mono on <code>; we ship one font
+  across the entire app. If a caller actually needs mono for literal code
+  snippets, override with class="font-mono" — explicit, intentional.
+#}
+<span class="relative rounded bg-muted px-[0.3rem] py-[0.2rem] text-sm font-semibold {{ class }}">{{ caller() }}</span>
+{% endmacro %}

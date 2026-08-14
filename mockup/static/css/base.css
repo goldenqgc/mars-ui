@@ -1,0 +1,139 @@
+/* MARS UI - base styles & CSS variables.
+   Per MARS_UI.md §2.1: shadcn/ui default tokens verbatim, + --success/--warning
+   for ops status semantics. light/dark toggle by adding .light class on :root.
+*/
+
+/* @font-face — Inter self-hosted (woff2, no CDN dep). Single font for the
+   whole app: no monospace, no second family. shadcn-canonical. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/static/fonts/inter-latin.woff2') format('woff2-variations'),
+       url('/static/fonts/inter-latin.woff2') format('woff2');
+}
+
+/* NOTE: We deliberately do NOT touch `code` / `pre` / `kbd` / `samp` here.
+   Tailwind preflight (injected by the CDN at runtime, AFTER this file)
+   sets those elements to `theme('fontFamily.mono')`. Any reset in this
+   file would be overridden anyway. The single-font policy is enforced at
+   the template level: prefer `<span>` over `<code>` for non-code
+   tokens (IPs, timestamps), and add `font-sans` explicitly on `<pre>`
+   blocks when configuring config snippets that we want to render in
+   Inter (rather than the Tailwind default monospace). */
+
+:root,
+:root.dark {
+  --background: 240 10% 3.9%;
+  --foreground: 0 0% 98%;
+  --card: 240 10% 3.9%;
+  --card-foreground: 0 0% 98%;
+  --popover: 240 10% 3.9%;
+  --popover-foreground: 0 0% 98%;
+  --primary: 0 0% 98%;
+  --primary-foreground: 240 5.9% 10%;
+  --secondary: 240 3.7% 15.9%;
+  --secondary-foreground: 0 0% 98%;
+  --muted: 240 3.7% 15.9%;
+  --muted-foreground: 240 5% 64.9%;
+  --accent: 240 3.7% 15.9%;
+  --accent-foreground: 0 0% 98%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 240 3.7% 15.9%;
+  --input: 240 3.7% 15.9%;
+  --ring: 240 4.9% 83.9%;
+  --radius: 0.5rem;
+
+  /* MARS_UI extensions for ops status */
+  --success: 142 71% 45%;
+  --warning: 38 92% 50%;
+
+  /* shadcn chart slots */
+  --chart-1: 220 70% 50%;
+  --chart-2: 160 60% 45%;
+  --chart-3: 30 80% 55%;
+  --chart-4: 280 65% 60%;
+  --chart-5: 340 75% 55%;
+}
+
+:root.light {
+  --background: 0 0% 100%;
+  --foreground: 240 10% 3.9%;
+  --card: 0 0% 100%;
+  --card-foreground: 240 10% 3.9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 10% 3.9%;
+  --primary: 240 5.9% 10%;
+  --primary-foreground: 0 0% 98%;
+  --secondary: 240 4.8% 95.9%;
+  --secondary-foreground: 240 5.9% 10%;
+  --muted: 240 4.8% 95.9%;
+  --muted-foreground: 240 3.8% 46.1%;
+  --accent: 240 4.8% 95.9%;
+  --accent-foreground: 240 5.9% 10%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 240 5.9% 90%;
+  --input: 240 5.9% 90%;
+  --ring: 240 5% 64.9%;
+  --radius: 0.5rem;
+
+  --success: 142 71% 45%;
+  --warning: 32 92% 45%;
+
+  --chart-1: 220 70% 50%;
+  --chart-2: 160 60% 45%;
+  --chart-3: 30 80% 55%;
+  --chart-4: 280 65% 60%;
+  --chart-5: 340 75% 55%;
+}
+
+/* Inter (Latin) + correct CJK platform-native fallback order.
+   Order rule: Latin fallback first, then platform-native CJK before
+   Noto/SCIM. Putting Noto Sans (Latin-only) before CJK fonts means
+   non-Latin glyphs fall through to the right thing. */
+html, body {
+  font-family: 'Inter', 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
+               Roboto, 'Helvetica Neue', Arial,
+               'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB',
+               'Noto Sans SC', 'Noto Sans CJK SC',
+               'Source Han Sans SC', 'WenQuanYi Micro Hei',
+               sans-serif;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "rlig" 1, "calt" 1;  /* Inter ligatures, like shadcn */
+  text-rendering: optimizeLegibility;
+}
+
+/* HTMX global spinner (shadcn-style full-screen overlay).
+   Triggered when any HTMX request is in-flight. */
+#global-spinner.htmx-request { display: flex; }
+#global-spinner {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: hsl(var(--background) / 0.6);
+  backdrop-filter: blur(2px);
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+#global-spinner .spin {
+  width: 28px;
+  height: 28px;
+  border-radius: 9999px;
+  border: 3px solid hsl(var(--border));
+  border-top-color: hsl(var(--primary));
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Theme-class color sets are still applied via inline hsl(var(--…)/<alpha>) —
+   no separate .dark rule needed. */

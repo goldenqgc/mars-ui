@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% import "components/mars_ui.html" as ui %}
+{% block title %}Sign in · MARS NetHub{% endblock %}
+{% set show_nav = false %}
+
+{% block content %}
+<div class="flex items-center justify-center min-h-[70vh]">
+  {% call ui.ui_card(class="w-[420px]") %}
+    <div class="mb-6 text-center">
+      <h1 class="text-2xl font-semibold tracking-tight text-foreground">MARS NetHub</h1>
+      <p class="text-sm text-muted-foreground mt-1">On-prem network device management console</p>
+    </div>
+
+    {# Intentional showcase: render the error state on first load so the
+       Alert family's shape is visible. (Per original task brief.) #}
+    {% call ui.ui_alert(variant="destructive") %}
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" class="h-4 w-4"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
+      {% call ui.ui_alert_title() %}Session expired{% endcall %}
+      {% call ui.ui_alert_description() %}Please sign in again (demo){% endcall %}
+    {% endcall %}
+
+    <form class="mt-4 flex flex-col gap-4" hx-post="/login" hx-target="#login-feedback" hx-swap="innerHTML">
+      {{ ui.ui_input("username", "Username", value="admin", placeholder="Enter username", required=True) }}
+      {{ ui.ui_input("password", "Password", type="password", value="", placeholder="Enter password", required=True) }}
+
+      <div id="login-feedback"></div>
+
+      {{ ui.ui_button("Sign in", variant="default", type="submit", hx_post="/login") }}
+    </form>
+
+    <p class="mt-6 text-xs text-muted-foreground text-center">
+      Mockup stage — any credentials will sign in.
+    </p>
+  {% endcall %}
+</div>
+{% endblock %}

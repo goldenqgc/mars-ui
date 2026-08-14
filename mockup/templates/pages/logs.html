@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% import "components/mars_ui.html" as ui %}
+{% set nav_active = "logs" %}
+{% block title %}Audit log · MARS NetHub{% endblock %}
+
+{% block content %}
+{% call ui.ui_page_header("Audit log", "Full audit trail · login, config changes, bulk operations, etc.") %}
+  {{ ui.ui_button("Export CSV", variant="outline") }}
+{% endcall %}
+
+{# Filter bar (date range + actor select).
+   hx-select+"hx-target" pair — hx-select extracts the wrap div from the
+   full-HTML response, hx-target tells htmx where to put it. Triggers
+   only on submit. #}
+{% call ui.ui_card(class="mb-6") %}
+  <form hx-get="/logs"
+        hx-target="#log-table-wrap"
+        hx-select="#log-table-wrap"
+        hx-swap="outerHTML"
+        hx-trigger="submit"
+        hx-push-url="true"
+        class="flex items-end gap-4">
+
+    {{ ui.ui_input("date_from", "From", type="date", value=date_from) }}
+    {{ ui.ui_input("date_to",   "To",   type="date", value=date_to) }}
+
+    {{ ui.ui_select("actor", "Actor",
+                    [("ALL","All"),("admin","admin"),("ops-zhang","ops-zhang"),("net-auto","net-auto")],
+                    selected=selected_actor) }}
+
+    {{ ui.ui_select("action", "Action",
+                    [("ALL","All"),("reboot","Reboot"),("config_apply","Config push"),("login","Sign in"),("bulk","Bulk")],
+                    selected=selected_action) }}
+
+    {{ ui.ui_button("Filter", variant="default", type="submit") }}
+  </form>
+{% endcall %}
+
+<div id="log-table-wrap">
+  {% call ui.ui_card(title="Log entries (" + logs|length|string + ")") %}
+    {% call ui.ui_table() %}
+      {% call ui.ui_thead() %}
+        {% call ui.ui_tr() %}
+          {{ ui.ui_th("Timestamp") }}
+          {{ ui.ui_th("Actor") }}
+          {{ ui.ui_th("Device") }}
+          {{ ui.ui_th("Action") }}
+          {{ ui.ui_th("Result") }}
+          {{ ui.ui_th("Notes") }}
+        {% endcall %}
+      {% endcall %}
+      {% call ui.ui_tbody() %}
+        {% for log in logs %}
+        {% call ui.ui_tr() %}
+          {% call ui.ui_td() %}{{ log.time }}{% endcall %}
+          {% call ui.ui_td() %}{{ log.actor }}{% endcall %}
+          {% call ui.ui_td() %}<a href="/switches/{{ log.device_id }}" class="font-medium text-primary hover:underline">{{ log.device }}</a>{% endcall %}
+          {% call ui.ui_td() %}{{ log.action_label }}{% endcall %}
+          {% call ui.ui_td() %}{{ ui.ui_result_badge(log.result) }}{% endcall %}
+          {% call ui.ui_td() %}{{ log.note }}{% endcall %}
+        {% endcall %}
+        {% endfor %}
+      {% endcall %}
+    {% endcall %}
+
+    {{ ui.ui_pager(current=1, total=8) }}
+  {% endcall %}
+</div>
+{% endblock %}

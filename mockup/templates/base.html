@@ -1,0 +1,402 @@
+{% import "components/mars_ui.html" as ui %}
+{# show_nav default: true (pages opt-in to the nav by NOT setting it to false).
+   login.html sets it to false because there's no point in nav during sign-in. #}
+{% if show_nav is not defined %}{% set show_nav = true %}{% endif %}
+<!DOCTYPE html>
+<html lang="zh-CN" class="min-w-[1280px]">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1280" />
+  <title>{% block title %}MARS NetHub{% endblock %}</title>
+
+  <!-- Tailwind (CDN for mockup; real project will use a built CSS) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {{ tailwind_config | tojson }};
+  </script>
+
+  <!-- HTMX -->
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+
+  <!-- No-flash theme bootstrap. Must run BEFORE body renders. Per spec: no
+       localStorage entry → render light (NOT OS preference). -->
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('mars-theme');
+        if (t !== 'light' && t !== 'dark') t = 'light';
+        document.documentElement.classList.add(t);
+      } catch (e) {
+        document.documentElement.classList.add('light');
+      }
+    })();
+  </script>
+
+  <link rel="stylesheet" href="/static/css/base.css" />
+</head>
+<body class="min-h-screen bg-background text-foreground font-sans antialiased">
+
+  {% block nav %}
+    {% if show_nav %}
+    <header class="border-b border-border bg-card/60 backdrop-blur sticky top-0 z-30">
+      <div class="mx-auto max-w-[1440px] flex items-center justify-between px-6 h-14">
+        <div class="flex items-center gap-8">
+          <a href="/switches" class="font-semibold text-card-foreground tracking-wide">MARS <span class="text-primary">NetHub</span></a>
+          <nav class="flex items-center gap-6 text-sm">
+            <a href="/switches" class="{% if nav_active == 'switches' %}text-primary{% else %}text-muted-foreground hover:text-card-foreground{% endif %} transition-all duration-200">Switches</a>
+            <a href="/logs"    class="{% if nav_active == 'logs' %}text-primary{% else %}text-muted-foreground hover:text-card-foreground{% endif %} transition-all duration-200">Audit log</a>
+          </nav>
+        </div>
+        <div class="flex items-center gap-3 text-sm text-muted-foreground">
+          {# Theme toggle button inside nav — same id, global handler picks it up. #}
+          {{ ui.ui_theme_toggle() }}
+          <span>ops · admin</span>
+          <span class="h-2 w-2 rounded-full bg-success"></span>
+        </div>
+      </div>
+    </header>
+    {% else %}
+    {# No nav (e.g. login) — still expose the toggle so the user can flip themes
+       before signing in. Floating top-right corner of the viewport. #}
+    <div class="fixed top-4 right-6 z-30">
+      {{ ui.ui_theme_toggle(class="rounded-md border border-border bg-card/80 backdrop-blur px-2.5 py-1 text-card-foreground shadow-sm transition-all duration-200 hover:bg-accent") }}
+    </div>
+    {% endif %}
+  {% endblock %}
+
+  <main class="mx-auto max-w-[1440px] px-6 py-8">
+    {% block content %}{% endblock %}
+  </main>
+
+  <div id="global-spinner"><div class="spin"></div></div>
+
+  {# Tabs + Checkbox state bridge (pure client-side, per MARS_UI.md §6).
+     Stand-in for Radix, so the shadcn-canonical data-state attributes
+     flip on user interaction. #}
+  <script>
+    (function () {
+      // -- Tabs data-state bridge --
+      // Click on [data-tabs-trigger] flips that trigger (and its siblings)
+      // to data-state="active" and toggles the matching [data-tabs-content].
+      document.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-tabs-trigger]');
+        if (!btn) return;
+        const root = btn.closest('[data-tabs-root]');
+        if (!root) return;
+        const value = btn.dataset.value;
+        root.querySelectorAll('[data-tabs-trigger]').forEach(t => {
+          if (t.dataset.value === value) t.setAttribute('data-state', 'active');
+          else t.removeAttribute('data-state');
+        });
+        root.querySelectorAll('[data-tabs-content]').forEach(c => {
+          if (c.dataset.value === value) c.removeAttribute('hidden');
+          else c.setAttribute('hidden', '');
+        });
+      });
+
+      // Initial: surface whatever data-state="active" the server emitted
+      // (shadcn canonical marks the active tab). Hide all other panels.
+      document.querySelectorAll('[data-tabs-root]').forEach(root => {
+        const active = root.querySelector('[data-tabs-trigger][data-state="active"]');
+        const fallback = root.dataset.defaultValue || (active && active.dataset.value);
+        if (!fallback) return;
+        root.querySelectorAll('[data-tabs-content]').forEach(c => {
+          if (c.dataset.value === fallback) c.removeAttribute('hidden');
+          else c.setAttribute('hidden', '');
+        });
+      });
+
+      // -- Checkbox data-state bridge --
+      // Translate native checked → Radix-style data-state on the input.
+      document.addEventListener('change', (e) => {
+        const cb = e.target;
+        if (!cb || cb.tagName !== 'INPUT' || cb.type !== 'checkbox') return;
+        if (!cb.hasAttribute('role') || cb.getAttribute('role') !== 'checkbox') return;
+        cb.setAttribute('data-state', cb.checked ? 'checked' : 'unchecked');
+
+        // Also: per-port-table select-all count + bulk-toolbar visibility.
+        if (cb.hasAttribute('data-port-checkbox')) {
+          const tbody = cb.closest('tbody');
+          if (!tbody) return;
+          const checked = tbody.querySelectorAll('[data-port-checkbox]:checked');
+          const n = checked.length;
+          const counter = tbody.parentElement.querySelector('[data-port-selected-count]');
+          if (counter) counter.textContent = String(n);
+          const bar = document.getElementById('ports-bulk-toolbar');
+          if (bar) bar.classList.toggle('hidden', n === 0);
+        }
+      });
+    })();
+  </script>
+
+  {# Theme toggle wiring (pure client-side, per MARS_UI.md §6). Idempotent
+     across htmx swaps: delegated handler on document. #}
+  <script>
+    (function () {
+      const STORAGE_KEY = 'mars-theme';
+
+      function current() {
+        return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+      }
+
+      function apply(theme) {
+        const html = document.documentElement;
+        html.classList.remove('light', 'dark');
+        html.classList.add(theme);
+        try { localStorage.setItem(STORAGE_KEY, theme); } catch (_) {}
+
+        const btn = document.getElementById('theme-toggle');
+        if (btn) {
+          btn.querySelector('[data-icon="light"]').classList.toggle('hidden', theme === 'light');
+          btn.querySelector('[data-icon="dark"]').classList.toggle('hidden',  theme === 'dark');
+        }
+      }
+
+      // Initial icon state (button is in DOM by now via inline template).
+      const initBtn = document.getElementById('theme-toggle');
+      if (initBtn) {
+        const t = current();
+        initBtn.querySelector('[data-icon="light"]').classList.toggle('hidden', t === 'light');
+        initBtn.querySelector('[data-icon="dark"]').classList.toggle('hidden',  t === 'dark');
+      }
+
+      // Click — delegated, so even if button is re-rendered by htmx, it works.
+      document.addEventListener('click', (e) => {
+        const btn = e.target.closest('#theme-toggle');
+        if (!btn) return;
+        apply(current() === 'light' ? 'dark' : 'light');
+      });
+    })();
+  </script>
+
+  {# Per-cell click-to-edit + staged-changes buffer.
+     Model: cells are [span data-display][input/select data-cell-edit hidden].
+     Click span -> swap to edit. blur/change -> swap back. Value matches
+     data-original -> mark clean. Different -> mark dirty (warning bg).
+     Staged buffer accumulates in `stagedChanges`. Top toolbar shows
+     count + Apply (confirm modal) + Discard (rollback). #}
+  <script>
+    (function () {
+      const staged = {};   // { <port>: { <field>: { old, new } } }
+
+      function enterEdit(display) {
+        const td = display.closest('td');
+        const edit = td.querySelector('[data-cell-edit]');
+        if (!edit) return;
+        if (edit.tagName === 'SELECT') edit.value = display.dataset.current;
+        display.classList.add('hidden');
+        edit.classList.remove('hidden');
+        edit.focus();
+        if (edit.tagName === 'INPUT' && edit.type === 'text' && typeof edit.select === 'function') {
+          setTimeout(() => edit.select(), 0);
+        }
+      }
+      function exitEdit(display, edit, td, current) {
+        const orig  = display.dataset.original ?? '';
+        const port  = display.dataset.port;
+        const field = display.dataset.portField;
+        // Persist new value into the display span
+        display.dataset.current = current;
+        const empty = !current;
+        display.textContent = empty ? (field === 'description' ? '(no description)' : '') : current;
+        if (field === 'description') {
+          display.classList.toggle('text-muted-foreground', empty);
+          display.classList.toggle('italic', empty);
+        }
+        // Restore visibility
+        edit.classList.add('hidden');
+        display.classList.remove('hidden');
+        // Stage into buffer + dirty mark — highlight applies to the span only,
+        // not the whole td (avoids the row looking like an error state).
+        if (current === orig) {
+          delete (staged[port] ?? {})[field];
+          if (staged[port] && Object.keys(staged[port]).length === 0) delete staged[port];
+          display.classList.remove('bg-warning/15', 'text-warning-foreground', 'border-warning');
+          edit.classList.remove('bg-warning/15');
+        } else {
+          (staged[port] = staged[port] ?? {})[field] = { old: orig, new: current };
+          display.classList.add('bg-warning/15', 'text-warning-foreground', 'border-warning');
+          edit.classList.add('bg-warning/15');
+        }
+        refreshToolbar();
+      }
+
+      // Click on [data-cell] (display) -> enter edit
+      document.addEventListener('click', (e) => {
+        const display = e.target.closest('[data-cell]');
+        if (!display) return;
+        enterEdit(display);
+      });
+
+      // Change on [data-cell-edit] (select dropdowns) -> commit + exit
+      document.addEventListener('change', (e) => {
+        const edit = e.target.closest('[data-cell-edit]');
+        if (!edit) return;
+        const td = edit.closest('td');
+        const display = td.querySelector('[data-cell]');
+        exitEdit(display, edit, td, edit.value);
+      });
+
+      // focusout on text inputs (description) -> commit + exit
+      document.addEventListener('focusout', (e) => {
+        const edit = e.target.closest('[data-cell-edit]');
+        if (!edit || edit.tagName !== 'INPUT') return;
+        setTimeout(() => {
+          const td = edit.closest('td');
+          if (!td) return;
+          const display = td.querySelector('[data-cell]');
+          if (!display || edit.classList.contains('hidden')) return;
+          exitEdit(display, edit, td, edit.value);
+        }, 0);
+      });
+
+      // Bulk-VLAN checkbox -> count + bulk bar
+      document.addEventListener('change', (e) => {
+        const cb = e.target.closest('[data-port-checkbox]');
+        if (!cb) return;
+        const tbody = cb.closest('tbody');
+        const checked = tbody.querySelectorAll('[data-port-checkbox]:checked');
+        const n = checked.length;
+        const counter = document.querySelector('[data-bulk-selected-count]');
+        if (counter) counter.textContent = String(n);
+        const bar = document.getElementById('ports-bulk-vlan-bar');
+        if (bar) bar.classList.toggle('hidden', n === 0);
+      });
+
+      // Toolbar / modal / bulk-VLAN stage
+      document.addEventListener('click', (e) => {
+        const discard = e.target.closest('[data-staged-discard]');
+        if (discard) {
+          Object.keys(staged).forEach(p => delete staged[p]);
+          document.querySelectorAll('[data-cell]').forEach(display => {
+            display.dataset.current = display.dataset.original ?? '';
+            display.textContent = display.dataset.current || (display.dataset.portField === 'description' ? '(no description)' : '');
+            if (display.dataset.portField === 'description') {
+              display.classList.toggle('text-muted-foreground', !display.dataset.current);
+              display.classList.toggle('italic', !display.dataset.current);
+            }
+            display.classList.remove('bg-warning/15', 'text-warning-foreground', 'border-warning');
+          });
+          document.querySelectorAll('[data-cell-edit]').forEach(e => {
+            e.classList.add('hidden');
+            e.classList.remove('bg-warning/15');
+          });
+          document.querySelectorAll('[data-cell]').forEach(d => d.classList.remove('hidden'));
+          refreshToolbar();
+          return;
+        }
+
+        const open = e.target.closest('[data-staged-apply]');
+        if (open) { openConfirm(); return; }
+        const det = e.target.closest('[data-staged-details]');
+        if (det) { openConfirm(); return; }
+
+        const submit = e.target.closest('[data-confirm-submit]');
+        if (submit) { closeConfirm(); applyChanges(); return; }
+        const cancel = e.target.closest('[data-confirm-cancel]');
+        if (cancel) { closeConfirm(); return; }
+
+        const bulk = e.target.closest('[data-bulk-apply-vlan]');
+        if (bulk) {
+          const sel = document.querySelector('[data-bulk-vlan]');
+          const vlan = sel && sel.value;
+          if (!vlan) return;
+          const ports = [...document.querySelectorAll('[data-port-checkbox]:checked')].map(c => c.value);
+          if (!ports.length) return;
+          ports.forEach(port => {
+            const display = document.querySelector(`[data-cell][data-port="${port}"][data-port-field="vlan"]`);
+            if (!display) return;
+            const td = display.closest('td');
+            if (!td) return;
+            display.dataset.current = String(vlan);
+            display.textContent = String(vlan);
+            const edit = td.querySelector('[data-cell-edit]');
+            if (edit) {
+              edit.value = String(vlan);
+              edit.classList.remove('hidden');
+              display.classList.add('hidden');
+              setTimeout(() => {
+                edit.classList.add('hidden');
+                display.classList.remove('hidden');
+                // trigger same exit flow
+                exitEdit(display, edit, td, String(vlan));
+              }, 80);
+            }
+          });
+          document.querySelectorAll('[data-port-checkbox]:checked]').forEach(c => { c.checked = false; });
+          document.getElementById('ports-bulk-vlan-bar')?.classList.add('hidden');
+          const counter = document.querySelector('[data-bulk-selected-count]');
+          if (counter) counter.textContent = '0';
+          return;
+        }
+
+        const modal = e.target.closest('[data-confirm-modal]');
+        if (modal) { closeConfirm(); }
+      });
+
+      function refreshToolbar() {
+        const bar = document.querySelector('[data-staged-toolbar]');
+        if (!bar) return;
+        const n = Object.values(staged).reduce((s, f) => s + Object.keys(f).length, 0);
+        bar.classList.toggle('hidden', n === 0);
+        const c = bar.querySelector('[data-staged-count]');
+        if (c) c.textContent = String(n);
+      }
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeConfirm();
+      });
+
+      function openConfirm() {
+        const modal = document.querySelector('[data-confirm-modal]');
+        if (!modal) return;
+        const n = Object.values(staged).reduce((s, f) => s + Object.keys(f).length, 0);
+        modal.querySelector('[data-confirm-count]').textContent = String(n);
+        modal.querySelector('[data-confirm-count-cta]').textContent = String(n);
+        const list = modal.querySelector('[data-confirm-list]');
+        list.innerHTML = '';
+        Object.keys(staged).sort((a,b) => +a - +b).forEach(port => {
+          Object.entries(staged[port]).forEach(([field, {old, new: nu}]) => {
+            const li = document.createElement('li');
+            li.className = 'flex items-center gap-2';
+            li.innerHTML = `<span class="font-mono text-warning">Gi1/${port}</span>` +
+                           `<span class="rounded bg-muted px-1.5 py-0.5 text-xs">${field}</span>` +
+                           `<span class="text-muted-foreground text-xs">${old || '\u2205'} \u2192 <span class="text-foreground font-medium">${nu || '\u2205'}</span></span>`;
+            list.appendChild(li);
+          });
+        });
+        modal.classList.replace('hidden', 'flex');
+      }
+      function closeConfirm() {
+        document.querySelector('[data-confirm-modal]')?.classList.replace('flex', 'hidden');
+      }
+
+      function applyChanges() {
+        const m = location.pathname.match(/\/switches\/(\d+)/);
+        const deviceId = m ? m[1] : '0';
+        const result = document.getElementById('apply-result');
+        fetch(`/switches/${deviceId}/ports/bulk-apply`, {
+          method: 'POST',
+          body: new URLSearchParams({ payload: JSON.stringify(staged) }),
+          headers: { 'HX-Request': 'true', 'HX-Target': 'apply-result', 'HX-Swap': 'innerHTML' },
+        }).then(r => r.text()).then(html => {
+          htmx.swap(result, html);
+          Object.keys(staged).forEach(p => delete staged[p]);
+          document.querySelectorAll('[data-cell]').forEach(display => {
+            display.dataset.current = display.dataset.original ?? '';
+            display.textContent = display.dataset.current || (display.dataset.portField === 'description' ? '(no description)' : '');
+            if (display.dataset.portField === 'description') {
+              display.classList.toggle('text-muted-foreground', !display.dataset.current);
+              display.classList.toggle('italic', !display.dataset.current);
+            }
+            display.classList.remove('bg-warning/15', 'text-warning-foreground', 'border-warning');
+          });
+          refreshToolbar();
+        });
+      }
+    })();
+  </script>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

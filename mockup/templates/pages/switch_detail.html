@@ -1,0 +1,259 @@
+{% extends "base.html" %}
+{% import "components/mars_ui.html" as ui %}
+{% set nav_active = "switches" %}
+{% block title %}{{ sw.name }} · MARS NetHub{% endblock %}
+
+{% block content %}
+{% call ui.ui_page_header(sw.name, sw.ip + " · " + sw.model) %}
+  {{ ui.ui_button("Back to list", variant="outline", hx_get="/switches", hx_target="body") }}
+  {{ ui.ui_button("Reboot", variant="destructive",
+    hx_post="/switches/" + sw.id|string + "/reboot",
+    hx_confirm="Reboot " + sw.name + "? This action cannot be undone.") }}
+{% endcall %}
+
+<div class="grid grid-cols-12 gap-6">
+
+  {# ---- Col 1 (1/3): device info card ---- #}
+  <div class="col-span-4">
+    {% call ui.ui_card(title="Device info") %}
+      {{ ui.ui_kv("Name",          sw.name) }}
+      {{ ui.ui_kv("IP",            sw.ip) }}
+      {{ ui.ui_kv("Model",         sw.model) }}
+      {{ ui.ui_kv("Serial #",      sw.serial) }}
+      {# Location with map icon (links to full MazeMap in a new tab). #}
+      <div class="flex items-center justify-between py-2 border-b border-border last:border-b-0">
+        <span class="text-sm text-muted-foreground">Location</span>
+        <span class="flex items-center gap-2 text-sm text-foreground font-medium">
+          <a href="{{ sw.map_url or 'https://use.mazemap.com/' }}"
+             target="_blank" rel="noopener noreferrer"
+             title="Open in MazeMap"
+             class="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2 py-0.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+              <circle cx="12" cy="10" r="3"/>
+            </svg>
+            <span>{{ sw.location }}</span>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="ml-0.5">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+              <polyline points="15 3 21 3 21 9"/>
+              <line x1="10" y1="14" x2="21" y2="3"/>
+            </svg>
+          </a>
+        </span>
+      </div>
+      <div class="flex items-center justify-between py-2 border-b border-border">
+        <span class="text-sm text-muted-foreground">Status</span>
+        {{ ui.ui_status_badge(sw.status) }}
+      </div>
+      {{ ui.ui_kv("Last update", sw.last_seen) }}
+      {{ ui.ui_kv("Uptime",      sw.uptime) }}
+    {% endcall %}
+  </div>
+
+  {# ---- Col 2 (1/3): recent activity (log format) ---- #}
+  <div class="col-span-8">
+    {% call ui.ui_card(title="Recent activity") %}
+      <ul class="divide-y divide-border text-sm">
+        {% for log in device_logs %}
+          <li class="py-2 first:pt-0 last:pb-0">
+            <div class="flex items-baseline gap-2">
+              <span class="font-mono text-xs text-muted-foreground shrink-0">{{ log.time }}</span>
+              <span class="font-medium shrink-0">{{ log.actor }}</span>
+              <span class="text-muted-foreground shrink-0">·</span>
+              <span class="truncate">{{ log.action_label }}</span>
+              <span class="ml-auto shrink-0">{{ ui.ui_result_badge(log.result) }}</span>
+            </div>
+            {% if log.note %}
+            <p class="mt-0.5 text-xs text-muted-foreground pl-1">{{ log.note }}</p>
+            {% endif %}
+          </li>
+        {% else %}
+          <li class="py-2 text-muted-foreground">No recent activity.</li>
+        {% endfor %}
+      </ul>
+    {% endcall %}
+  </div>
+
+  {# (no third column — map link is in the Location row of Device info) #}
+</div>
+
+{# ---- Ports section (full-width) ---- #}
+{% call ui.ui_card(title="Ports (48)", class="mt-6") %}
+
+  {# Staged-changes toolbar — sticky below header, visible only when ≥ 1 change.
+     The bulk-VLAN input is ALSO always reachable via the modal. #}
+  <div id="ports-staged-toolbar"
+       class="sticky top-14 z-20 -mx-6 -mt-6 mb-4 flex items-center justify-between border-b border-warning/40 bg-warning/10 px-6 py-2 text-sm text-warning-foreground hidden"
+       role="alert" aria-live="polite"
+       data-staged-toolbar>
+    <div class="flex items-center gap-3">
+      <span class="h-2 w-2 rounded-full bg-warning"></span>
+      <span>
+        <span data-staged-count class="font-semibold">0</span>
+        <span data-staged-count-label>changes pending</span>
+      </span>
+      <button type="button" data-staged-details
+              class="rounded-md px-2 py-0.5 text-xs underline-offset-2 hover:underline">
+        View changes
+      </button>
+    </div>
+    <div class="flex items-center gap-2">
+      <button type="button" data-staged-discard
+              class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none hover:bg-accent hover:text-accent-foreground h-8 px-3">
+        Discard
+      </button>
+      <button type="button" data-staged-apply
+              class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none bg-primary text-primary-foreground hover:bg-primary/90 h-8 px-3">
+        Apply changes
+      </button>
+    </div>
+  </div>
+
+  {# Bulk-VLAN helper bar — visible always (independent of cell edits). Lets
+     user apply the same VLAN to a selection of ports in one bulk action. #}
+  <div id="ports-bulk-vlan-bar"
+       class="mb-4 hidden items-center justify-between rounded-md border border-input bg-background px-4 py-2">
+    <div class="flex items-center gap-3 text-sm text-muted-foreground">
+      <span><span data-bulk-selected-count>0</span> selected</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <label class="text-sm text-muted-foreground">Set VLAN to</label>
+      <select data-bulk-vlan
+              class="flex h-8 w-24 rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1">
+        {% for v in allowed_vlans %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+      </select>
+      <button type="button" data-bulk-apply-vlan
+              class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none bg-primary text-primary-foreground hover:bg-primary/90 h-8 px-3">
+        Stage
+      </button>
+    </div>
+  </div>
+
+  {% call ui.ui_table() %}
+    {% call ui.ui_thead() %}
+      {% call ui.ui_tr() %}
+        {{ ui.ui_th("", class="w-10") }}
+        {{ ui.ui_th("Port") }}
+        {{ ui.ui_th("Status") }}
+        {{ ui.ui_th("VLAN") }}
+        {{ ui.ui_th("Mode") }}
+        {{ ui.ui_th("PoE") }}
+        {{ ui.ui_th("Speed") }}
+        {{ ui.ui_th("Description") }}
+      {% endcall %}
+    {% endcall %}
+    {% call ui.ui_tbody() %}
+      {% for port in ports %}
+        <tr class="border-b transition-colors hover:bg-muted/50" data-port-row="{{ port.num }}">
+          {# checkbox for bulk-VLAN staging #}
+          {% call ui.ui_td() %}
+            <input type="checkbox" name="port_ids" value="{{ port.num }}"
+                   data-port-checkbox
+                   class="h-4 w-4 shrink-0 rounded-sm border-primary text-primary shadow focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1" />
+          {% endcall %}
+
+          {% call ui.ui_td() %}<span>{{ port.name }}</span>{% endcall %}
+
+          {% call ui.ui_td() %}
+            {% if port.status == "up" %}
+              <span class="inline-flex items-center gap-2"><span class="h-2 w-2 rounded-full bg-success"></span><span>Up</span></span>
+            {% else %}
+              <span class="inline-flex items-center gap-2"><span class="h-2 w-2 rounded-full bg-destructive"></span><span class="text-destructive">Down</span></span>
+            {% endif %}
+          {% endcall %}
+
+          {# VLAN — click span to swap in <select> with allowed VLAN IDs only.
+             select.onchange commits + collapses back to span. #}
+          {% call ui.ui_td() %}
+            <span data-cell data-port="{{ port.num }}" data-port-field="vlan" data-current="{{ port.vlan }}" data-original="{{ port.vlan }}" class="port-cell-anchor inline-flex items-center rounded-md border border-transparent px-2 py-0.5 text-sm font-medium hover:border-input min-w-[5rem] justify-center cursor-pointer">
+              {{ port.vlan }}
+            </span>
+            <select data-cell-edit
+                    data-port="{{ port.num }}" data-port-field="vlan" data-original="{{ port.vlan }}"
+                    class="hidden port-edit w-24 rounded-md border border-input bg-background px-2 py-0.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1">
+              {% for v in allowed_vlans %}
+              <option value="{{ v }}" {% if v == port.vlan %}selected{% endif %}>{{ v }}</option>
+              {% endfor %}
+            </select>
+          {% endcall %}
+
+          {# Mode — read-only badge. Use Sheet for full edit. #}
+          {% call ui.ui_td() %}
+            {% call ui.ui_badge(variant="secondary") %}{{ port.mode }}{% endcall %}
+          {% endcall %}
+
+          {# PoE — click span to swap in <select on/off>. #}
+          {% call ui.ui_td() %}
+            <span data-cell data-port="{{ port.num }}" data-port-field="poe"
+                  data-current="{{ 'on' if port.poe else 'off' }}"
+                  data-original="{{ 'on' if port.poe else 'off' }}"
+                  class="port-cell-anchor inline-flex items-center rounded-md border border-transparent px-2 py-0.5 text-sm font-medium hover:border-input min-w-[3rem] justify-center cursor-pointer">
+              {{ 'on' if port.poe else 'off' }}
+            </span>
+            <select data-cell-edit
+                    data-port="{{ port.num }}" data-port-field="poe"
+                    data-original="{{ 'on' if port.poe else 'off' }}"
+                    class="hidden port-edit w-20 rounded-md border border-input bg-background px-2 py-0.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1">
+              <option value="off" {% if not port.poe %}selected{% endif %}>off</option>
+              <option value="on"  {% if     port.poe %}selected{% endif %}>on</option>
+            </select>
+          {% endcall %}
+
+          {% call ui.ui_td() %}<span class="text-xs text-muted-foreground">{{ port.speed }}</span>{% endcall %}
+
+          {# Description — click span to swap in text input. blur commits + collapses. #}
+          {% call ui.ui_td(class="min-w-[14rem]") %}
+            <span data-cell data-port="{{ port.num }}" data-port-field="description"
+                  data-current="{{ port.description }}"
+                  data-original="{{ port.description }}"
+                  class="port-cell-anchor inline-flex items-center rounded-md border border-transparent px-2 py-0.5 text-sm hover:border-input cursor-pointer {% if not port.description %}text-muted-foreground italic{% endif %}">
+              {{ port.description if port.description else "(no description)" }}
+            </span>
+            <input type="text"
+                   data-cell-edit
+                   data-port="{{ port.num }}" data-port-field="description"
+                   data-original="{{ port.description }}"
+                   value="{{ port.description }}"
+                   placeholder="(no description)"
+                   class="hidden port-edit w-full rounded-md border border-input bg-background px-2 py-0.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1" />
+          {% endcall %}
+        </tr>
+      {% endfor %}
+    {% endcall %}
+  {% endcall %}
+
+  {# The apply-result region — htmx swaps the success toast into here. #}
+  <div id="apply-result" class="mt-4"></div>
+
+  {# Apply-confirm modal. Hidden by default; shown by JS via `flex` toggle.
+     shadcn-faithful shadcn Dialog structure: backdrop + content card,
+     centered, role=alertdialog. Mockup-stage: rendered hidden in DOM,
+     no Radix portal (mockup-grade). #}
+  <div data-confirm-modal
+       class="hidden fixed inset-0 z-40 items-center justify-center bg-background/80 backdrop-blur-sm">
+    <div role="alertdialog" aria-modal="true" aria-labelledby="confirm-title"
+         class="w-full max-w-lg rounded-xl border border-border bg-card text-card-foreground shadow-lg">
+      <div class="flex flex-col space-y-1.5 p-6">
+        <h2 id="confirm-title" class="text-lg font-semibold tracking-tight">Confirm staged changes</h2>
+        <p class="text-sm text-muted-foreground">
+          The following <span data-confirm-count>0</span> change(s) will be applied to
+          <span class="font-medium">{{ sw.name }}</span> ({{ sw.ip }}):
+        </p>
+      </div>
+      <div class="px-6 pb-2 max-h-72 overflow-y-auto">
+        <ul data-confirm-list class="space-y-1 text-sm"></ul>
+      </div>
+      <div class="flex items-center justify-end gap-2 p-6 pt-2">
+        <button type="button" data-confirm-cancel
+                class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground h-9 px-4">
+          Cancel
+        </button>
+        <button type="button" data-confirm-submit
+                class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:pointer-events-none h-9 px-4">
+          Apply <span data-confirm-count-cta>0</span> change(s)
+        </button>
+      </div>
+    </div>
+  </div>
+{% endcall %}
+{% endblock %}

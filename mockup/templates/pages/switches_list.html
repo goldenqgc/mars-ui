@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% import "components/mars_ui.html" as ui %}
+{% set nav_active = "switches" %}
+{% block title %}Switches · MARS NetHub{% endblock %}
+
+{% block content %}
+{% call ui.ui_page_header("Switches", "287 devices · 12 heartbeats timed out in the last minute") %}
+  {{ ui.ui_button("Refresh", variant="outline", hx_get="/switches/poll", hx_target="#switch-table-body", hx_swap="innerHTML") }}
+  {{ ui.ui_button("Add device", variant="default") }}
+{% endcall %}
+
+{# Filter bar.
+   hx-select extracts the wrap div out of the full-HTML response so the
+   swap doesn't fall back to the entire body (which would nest another
+   copy on every submit click). hx-trigger is "submit" only — every
+   filter change is committed on click, not on every keystroke. #}
+{% call ui.ui_card(class="mb-6") %}
+  <form class="flex items-end gap-4"
+        hx-get="/switches"
+        hx-target="#switch-table-wrap"
+        hx-select="#switch-table-wrap"
+        hx-swap="outerHTML"
+        hx-trigger="submit"
+        hx-push-url="true">
+    {{ ui.ui_input("q", "Search (name / IP)", value=query, placeholder="e.g. sw-core-01 or 10.0.1.1") }}
+    {{ ui.ui_select("status", "Status filter",
+                    [("ALL","All"),("UP","UP"),("DOWN","DOWN"),("WARNING","WARNING"),("UNKNOWN","UNKNOWN")],
+                    selected=selected_status) }}
+    {{ ui.ui_button("Filter", variant="default", type="submit") }}
+  </form>
+  {# Empty-state demo is a separate link OUTSIDE the form so the form
+     submission is not entangled with it. #}
+  <div class="mt-3 flex justify-end">
+    <a href="/switches?demo_empty=1"
+       class="text-xs text-muted-foreground hover:text-foreground transition-colors">
+      Demo empty state
+    </a>
+  </div>
+{% endcall %}
+
+{# ---- Demo-only skeleton showcase (kept visible so you can eyeball it). ---- #}
+{% call ui.ui_card(title="Loading (static showcase of ui_skeleton_row)", class="mb-6") %}
+  {% call ui.ui_table() %}
+    {% call ui.ui_thead() %}
+      {% call ui.ui_tr() %}
+        {{ ui.ui_th("Name") }}
+        {{ ui.ui_th("IP") }}
+        {{ ui.ui_th("Status") }}
+        {{ ui.ui_th("Last update") }}
+        {{ ui.ui_th("") }}
+      {% endcall %}
+    {% endcall %}
+    {% call ui.ui_tbody() %}
+      {{ ui.ui_skeleton_row(cols=5) }}
+      {{ ui.ui_skeleton_row(cols=5) }}
+      {{ ui.ui_skeleton_row(cols=5) }}
+    {% endcall %}
+  {% endcall %}
+{% endcall %}
+
+{# ---- List section ---- #}
+<div id="switch-table-wrap">
+  {# Empty state fires when EITHER demo_empty=1 OR the server returned
+     zero rows after filtering. The latter case covers "you searched for
+     gibberish and got nothing back". #}
+  {% if demo_empty or switches|length == 0 %}
+    {% call ui.ui_card(title="Devices") %}
+      {{ ui.ui_empty_state(
+          "No matches — try other keywords" if query or selected_status != "ALL"
+          else "No devices yet") }}
+    {% endcall %}
+  {% else %}
+
+    {# Bulk-action toolbar. Hidden / greyed when nothing is selected — that's
+       TODO for the real implementation. #}
+    {% call ui.ui_card(title="Devices", class="mb-0") %}
+      <div id="bulk-toolbar"
+           class="mb-4 flex items-center justify-between rounded-md border border-input bg-background px-4 py-2">
+        <div class="flex items-center gap-3 text-sm text-muted-foreground">
+          <label class="flex items-center gap-2">
+            <input id="select-all" type="checkbox" role="checkbox"
+                   class="h-4 w-4 shrink-0 rounded-sm border-primary text-primary shadow focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-2" />
+            Select all (<span id="selected-count">0</span> selected)
+          </label>
+        </div>
+        <div class="flex items-center gap-2">
+          {# TODO: greyed / hidden when no rows are checked #}
+          {{ ui.ui_button("Reboot selected", variant="destructive", size="sm",
+             hx_post="/switches/bulk-reboot",
+             hx_confirm="Reboot all selected devices? This action cannot be undone.",
+             hx_target="#bulk-result") }}
+          {{ ui.ui_button("Push config", variant="secondary", size="sm") }}
+        </div>
+      </div>
+      <div id="bulk-result"></div>
+
+      {% call ui.ui_table() %}
+        {% call ui.ui_thead() %}
+          {% call ui.ui_tr() %}
+            {{ ui.ui_th("", class="w-10") }}
+            {{ ui.ui_th("Name") }}
+            {{ ui.ui_th("IP") }}
+            {{ ui.ui_th("Model") }}
+            {{ ui.ui_th("Status") }}
+            {{ ui.ui_th("Last update") }}
+            {{ ui.ui_th(text="Actions", class="text-right") }}
+          {% endcall %}
+        {% endcall %}
+        {% call ui.ui_tbody(id="switch-table-body") %}
+          {% for s in switches %}
+          {% call ui.ui_tr() %}
+            {% call ui.ui_td() %}{{ ui.ui_tr_checkbox(s.id) }}{% endcall %}
+            {% call ui.ui_td() %}<a href="/switches/{{ s.id }}" class="font-medium text-primary hover:underline">{{ s.name }}</a>{% endcall %}
+            {% call ui.ui_td() %}<span>{{ s.ip }}</span>{% endcall %}
+            {% call ui.ui_td() %}{{ s.model }}{% endcall %}
+            {% call ui.ui_td() %}{{ ui.ui_status_badge(s.status) }}{% endcall %}
+            {% call ui.ui_td() %}{{ s.last_seen }}{% endcall %}
+            {% call ui.ui_td(class="text-right") %}
+              {{ ui.ui_button("Details", variant="ghost", size="sm",
+                 hx_get="/switches/" + s.id|string, hx_target="#detail-panel") }}
+              {{ ui.ui_button("Reboot", variant="destructive", size="sm",
+                 hx_post="/switches/" + s.id|string + "/reboot",
+                 hx_confirm="Reboot " + s.name + "? This action cannot be undone.",
+                 hx_target="#status-" + s.id|string) }}
+              <span id="status-{{ s.id }}"></span>
+            {% endcall %}
+          {% endcall %}
+          {% endfor %}
+        {% endcall %}
+      {% endcall %}
+
+      {{ ui.ui_pager(current=1, total=12) }}
+    {% endcall %}
+
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Client-side only (per MARS_UI.md §6): link the select-all checkbox.
+  const selectAll = document.getElementById('select-all');
+  if (selectAll) {
+    selectAll.addEventListener('change', (e) => {
+      document.querySelectorAll('input[name="selected_ids"]').forEach(cb => cb.checked = e.target.checked);
+      document.getElementById('selected-count').textContent =
+        e.target.checked ? document.querySelectorAll('input[name="selected_ids"]').length : 0;
+    });
+  }
+  document.querySelectorAll('input[name="selected_ids"]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const total = document.querySelectorAll('input[name="selected_ids"]:checked').length;
+      document.getElementById('selected-count').textContent = total;
+    });
+  });
+</script>
+{% endblock %}
