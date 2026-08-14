@@ -20,25 +20,30 @@
       {{ ui.ui_kv("IP",            sw.ip) }}
       {{ ui.ui_kv("Model",         sw.model) }}
       {{ ui.ui_kv("Serial #",      sw.serial) }}
-      {# Location with map icon (links to full MazeMap in a new tab). #}
+      {# Location: map link if MazeMap pin is known (only core-01/02),
+         plain coordinates (mono) otherwise. #}
       <div class="flex items-center justify-between py-2 border-b border-border last:border-b-0">
         <span class="text-sm text-muted-foreground">Location</span>
         <span class="flex items-center gap-2 text-sm text-foreground font-medium">
-          <a href="{{ sw.map_url or 'https://use.mazemap.com/' }}"
-             target="_blank" rel="noopener noreferrer"
-             title="Open in MazeMap"
-             class="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2 py-0.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
-              <circle cx="12" cy="10" r="3"/>
-            </svg>
-            <span>{{ sw.location }}</span>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="ml-0.5">
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-              <polyline points="15 3 21 3 21 9"/>
-              <line x1="10" y1="14" x2="21" y2="3"/>
-            </svg>
-          </a>
+          {% if sw.pin_poi %}
+            <a href="{{ sw.map_url }}"
+               target="_blank" rel="noopener noreferrer"
+               title="Open in MazeMap"
+               class="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2 py-0.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                <circle cx="12" cy="10" r="3"/>
+              </svg>
+              <span>{{ sw.location }}</span>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="ml-0.5">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                <polyline points="15 3 21 3 21 9"/>
+                <line x1="10" y1="14" x2="21" y2="3"/>
+              </svg>
+            </a>
+          {% else %}
+            <code class="font-mono text-xs text-muted-foreground">{{ sw.location }}</code>
+          {% endif %}
         </span>
       </div>
       <div class="flex items-center justify-between py-2 border-b border-border">
@@ -129,6 +134,27 @@
     </div>
   </div>
 
+  {# Search / filter / pagination: filter & paginate purely client-side.
+     Each row has data-search-key="lower-name lower-status lower-vlan" so the
+     JS filter is fast and pure. #}
+  <div class="mb-4 flex items-center justify-between gap-2">
+    <div class="flex items-center gap-2 flex-1">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-muted-foreground"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      <input type="text" placeholder="Search port… (e.g. Gi1-1-1)" data-port-search
+             class="flex h-8 w-56 rounded-md border border-input bg-background px-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1" />
+      <select data-port-status
+              class="flex h-8 w-32 rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1">
+        <option value="all">All status</option>
+        <option value="up">Up</option>
+        <option value="down">Down</option>
+      </select>
+      <span data-port-count class="text-xs text-muted-foreground ml-2">{{ ports|length }} ports</span>
+    </div>
+    <div class="text-xs text-muted-foreground">
+      Page <span data-port-page>1</span> of <span data-port-pages>1</span>
+    </div>
+  </div>
+
   {% call ui.ui_table() %}
     {% call ui.ui_thead() %}
       {% call ui.ui_tr() %}
@@ -144,7 +170,8 @@
     {% endcall %}
     {% call ui.ui_tbody() %}
       {% for port in ports %}
-        <tr class="border-b transition-colors hover:bg-muted/50" data-port-row="{{ port.num }}">
+        <tr class="border-b transition-colors hover:bg-muted/50" data-port-row="{{ port.num }}"
+            data-search-key="{{ port.name|lower }} {{ port.status|lower }} {{ port.vlan }} {{ port.description|lower }}">
           {# checkbox for bulk-VLAN staging #}
           {% call ui.ui_td() %}
             <input type="checkbox" name="port_ids" value="{{ port.num }}"
@@ -221,6 +248,19 @@
       {% endfor %}
     {% endcall %}
   {% endcall %}
+
+  {# Pagination — JS shows 16 rows per page, hides the rest. #}
+  <nav class="mt-3 flex items-center justify-end gap-1 text-sm" data-port-pagination>
+    <button type="button" data-port-prev
+            class="inline-flex items-center justify-center whitespace-nowrap rounded-md h-8 px-3 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:pointer-events-none">
+      ‹ Prev
+    </button>
+    <span data-port-page-tabs></span>
+    <button type="button" data-port-next
+            class="inline-flex items-center justify-center whitespace-nowrap rounded-md h-8 px-3 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:pointer-events-none">
+      Next ›
+    </button>
+  </nav>
 
   {# The apply-result region — htmx swaps the success toast into here. #}
   <div id="apply-result" class="mt-4"></div>

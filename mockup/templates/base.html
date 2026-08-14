@@ -7,6 +7,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=1280" />
+  <meta name="description" content="MARS NetHub — internal network-device management console" />
+  <meta name="color-scheme" content="light dark" />
   <title>{% block title %}MARS NetHub{% endblock %}</title>
 
   <!-- Tailwind (CDN for mockup; real project will use a built CSS) -->
@@ -179,6 +181,29 @@
     (function () {
       const staged = {};   // { <port>: { <field>: { old, new } } }
 
+      // Per-device persistent staged buffer — survives page reload via
+      // localStorage keyed by device id (path). Discard / Apply success
+      // / commit mismatch all clear the entry.
+      const STORAGE_KEY = 'mars-staged';
+      function loadStaged() {
+        try {
+          const m = location.pathname.match(/\/switches\/(\d+)/);
+          if (!m) return;
+          const raw = localStorage.getItem(`${STORAGE_KEY}-${m[1]}`);
+          if (!raw) return;
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') Object.assign(staged, parsed);
+        } catch (_) {}
+      }
+      function saveStaged() {
+        try {
+          const m = location.pathname.match(/\/switches\/(\d+)/);
+          if (!m) return;
+          localStorage.setItem(`${STORAGE_KEY}-${m[1]}`, JSON.stringify(staged));
+        } catch (_) {}
+      }
+      loadStaged();
+
       function enterEdit(display) {
         const td = display.closest('td');
         const edit = td.querySelector('[data-cell-edit]');
@@ -250,6 +275,32 @@
         }, 0);
       });
 
+      // Keyboard nav for cells:
+      //  - Esc inside an edit element cancels and reverts to original value.
+      //  - Enter inside an INPUT commits + advances to the next row's
+      //    same field (where the matching input exists).
+      document.addEventListener('keydown', (e) => {
+        const edit = e.target.closest('[data-cell-edit]');
+        if (!edit) return;
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          const orig = edit.dataset.original ?? '';
+          if (edit.tagName === 'INPUT') edit.value = orig;
+          else if (edit.tagName === 'SELECT') edit.value = orig;
+          edit.blur();
+          return;
+        }
+        if (e.key === 'Enter' && edit.tagName === 'INPUT') {
+          e.preventDefault();
+          edit.blur();
+          const tr = edit.closest('tr[data-port-row]');
+          const field = edit.dataset.portField;
+          const nextRow = tr?.nextElementSibling;
+          const nextEdit = nextRow?.querySelector(`[data-cell-edit][data-port-field="${field}"]`);
+          if (nextEdit) nextEdit.focus();
+        }
+      });
+
       // Bulk-VLAN checkbox -> count + bulk bar
       document.addEventListener('change', (e) => {
         const cb = e.target.closest('[data-port-checkbox]');
@@ -296,10 +347,12 @@
         const cancel = e.target.closest('[data-confirm-cancel]');
         if (cancel) { closeConfirm(); return; }
 
-        const bulk = e.target.closest('[data-bulk-apply-vlan]');
-        if (bulk) {
-          const sel = document.querySelector('[data-bulk-vlan]');
-          const vlan = sel && sel.value;
+        // Bulk-VLAN: auto-stage each selected port's VLAN the moment the
+        // user picks a value in the dropdown (no separate "Stage" click).
+        // Flow: tick checkboxes → pick VLAN → click "Apply changes".
+        const bulkVlanSel = e.target.closest('[data-bulk-vlan]');
+        if (bulkVlanSel) {
+          const vlan = bulkVlanSel.value;
           if (!vlan) return;
           const ports = [...document.querySelectorAll('[data-port-checkbox]:checked')].map(c => c.value);
           if (!ports.length) return;
@@ -318,15 +371,12 @@
               setTimeout(() => {
                 edit.classList.add('hidden');
                 display.classList.remove('hidden');
-                // trigger same exit flow
                 exitEdit(display, edit, td, String(vlan));
               }, 80);
             }
           });
-          document.querySelectorAll('[data-port-checkbox]:checked]').forEach(c => { c.checked = false; });
-          document.getElementById('ports-bulk-vlan-bar')?.classList.add('hidden');
-          const counter = document.querySelector('[data-bulk-selected-count]');
-          if (counter) counter.textContent = '0';
+          // Don't clear selection; user may want to refine VLAN across the
+          // same selection. Reset only when "Apply changes" is pressed.
           return;
         }
 
@@ -341,6 +391,19 @@
         bar.classList.toggle('hidden', n === 0);
         const c = bar.querySelector('[data-staged-count]');
         if (c) c.textContent = String(n);
+        saveStaged();
+        // Re-render dirty cell markers (and dirty DOM values) from the
+        // rehydrated buffer — handles page reload cleanly.
+        Object.entries(staged).forEach(([port, fields]) => {
+          Object.entries(fields).forEach(([field, {old, new: nu}]) => {
+            const display = document.querySelector(`[data-cell][data-port="${port}"][data-port-field="${field}"]`);
+            if (!display) return;
+            if (old === nu) return;
+            display.dataset.current = nu;
+            display.textContent = nu || (field === 'description' ? '(no description)' : '');
+            display.classList.add('bg-warning/15', 'text-warning-foreground', 'border-warning');
+          });
+        });
       }
 
       document.addEventListener('keydown', (e) => {
@@ -351,16 +414,26 @@
         const modal = document.querySelector('[data-confirm-modal]');
         if (!modal) return;
         const n = Object.values(staged).reduce((s, f) => s + Object.keys(f).length, 0);
+        const ports = Object.keys(staged).length;
         modal.querySelector('[data-confirm-count]').textContent = String(n);
         modal.querySelector('[data-confirm-count-cta]').textContent = String(n);
+        modal.querySelector('[data-confirm-count-cta]').dataset.scope = `${n} change${n === 1 ? '' : 's'} on ${ports} port${ports === 1 ? '' : 's'}`;
         const list = modal.querySelector('[data-confirm-list]');
         list.innerHTML = '';
         Object.keys(staged).sort((a,b) => +a - +b).forEach(port => {
-          Object.entries(staged[port]).forEach(([field, {old, new: nu}]) => {
+          const fields = staged[port];
+          const entries = Object.entries(fields);
+          if (entries.length === 0) return;
+          // Group-by-port header
+          const head = document.createElement('li');
+          head.className = 'flex items-center gap-2 py-1';
+          head.innerHTML = `<span class="font-mono text-warning text-sm font-semibold">Gi1/${port}</span>` +
+                           `<span class="text-xs text-muted-foreground">${entries.length} change${entries.length === 1 ? '' : 's'}</span>`;
+          list.appendChild(head);
+          entries.forEach(([field, {old, new: nu}]) => {
             const li = document.createElement('li');
-            li.className = 'flex items-center gap-2';
-            li.innerHTML = `<span class="font-mono text-warning">Gi1/${port}</span>` +
-                           `<span class="rounded bg-muted px-1.5 py-0.5 text-xs">${field}</span>` +
+            li.className = 'flex items-center gap-2 pl-4 text-sm';
+            li.innerHTML = `<span class="rounded bg-muted px-1.5 py-0.5 text-xs font-medium">${field}</span>` +
                            `<span class="text-muted-foreground text-xs">${old || '\u2205'} \u2192 <span class="text-foreground font-medium">${nu || '\u2205'}</span></span>`;
             list.appendChild(li);
           });
@@ -393,6 +466,77 @@
           });
           refreshToolbar();
         });
+      }
+
+      // ---- Search / filter / pagination ----
+      const PER_PAGE = 16;
+      const portRows = () => Array.from(document.querySelectorAll('tr[data-port-row]'));
+      const portSearch = document.querySelector('[data-port-search]');
+      const portStatus = document.querySelector('[data-port-status]');
+      const portCountEl = document.querySelector('[data-port-count]');
+      const portPageEl = document.querySelector('[data-port-page]');
+      const portPagesEl = document.querySelector('[data-port-pages]');
+      const portPageTabs = document.querySelector('[data-port-page-tabs]');
+      const portPrev = document.querySelector('[data-port-prev]');
+      const portNext = document.querySelector('[data-port-next]');
+      const portPagi = document.querySelector('[data-port-pagination]');
+      if (portRows().length && portPagi) {
+        let currentPage = 1;
+
+        function applyFilter() {
+          const q = (portSearch?.value || '').toLowerCase().trim();
+          const status = portStatus?.value || 'all';
+          const all = portRows();
+          let matchIdx = [];
+          all.forEach((tr, i) => {
+            const key = tr.dataset.searchKey || '';
+            const ok = (!q || key.includes(q)) && (status === 'all' || key.includes(status));
+            tr.dataset.filtered = ok ? '1' : '0';
+            if (ok) matchIdx.push(i);
+          });
+          const total = matchIdx.length;
+          const pages = Math.max(1, Math.ceil(total / PER_PAGE));
+          if (currentPage > pages) currentPage = pages;
+          const start = (currentPage - 1) * PER_PAGE;
+          const visible = new Set(matchIdx.slice(start, start + PER_PAGE));
+          all.forEach((tr, i) => tr.classList.toggle('hidden', !visible.has(i)));
+          if (portCountEl) portCountEl.textContent = `${total} port${total === 1 ? '' : 's'}`;
+          if (portPageEl) portPageEl.textContent = String(currentPage);
+          if (portPagesEl) portPagesEl.textContent = String(pages);
+          renderPageTabs(pages);
+          if (portPrev) portPrev.disabled = currentPage <= 1;
+          if (portNext) portNext.disabled = currentPage >= pages;
+        }
+
+        function renderPageTabs(pages) {
+          if (!portPageTabs) return;
+          portPageTabs.innerHTML = '';
+          function tab(p, active) {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.dataset.portPageTab = p;
+            b.textContent = p;
+            b.className = 'inline-flex items-center justify-center whitespace-nowrap rounded-md h-8 w-8 text-sm font-medium ' +
+              (active
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground');
+            return b;
+          }
+          for (let i = 1; i <= pages; i++) portPageTabs.appendChild(tab(i, i === currentPage));
+        }
+
+        if (portSearch) portSearch.addEventListener('input', () => { currentPage = 1; applyFilter(); });
+        if (portStatus) portStatus.addEventListener('change', () => { currentPage = 1; applyFilter(); });
+        if (portPrev) portPrev.addEventListener('click', () => { if (currentPage > 1) { currentPage--; applyFilter(); } });
+        if (portNext) portNext.addEventListener('click', () => { currentPage++; applyFilter(); });
+        if (portPageTabs) portPageTabs.addEventListener('click', (e) => {
+          const t = e.target.closest('[data-port-page-tab]');
+          if (!t) return;
+          currentPage = parseInt(t.textContent, 10);
+          applyFilter();
+        });
+
+        applyFilter();
       }
     })();
   </script>

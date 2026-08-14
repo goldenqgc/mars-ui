@@ -26,6 +26,9 @@
     {{ ui.ui_select("status", "Status filter",
                     [("ALL","All"),("UP","UP"),("DOWN","DOWN"),("WARNING","WARNING"),("UNKNOWN","UNKNOWN")],
                     selected=selected_status) }}
+    {{ ui.ui_select("sort", "Sort by",
+                    [("name","Name"),("ip","IP"),("status","Status"),("last_seen","Last update")],
+                    selected=selected_sort) }}
     {{ ui.ui_button("Filter", variant="default", type="submit") }}
   </form>
   {# Empty-state demo is a separate link OUTSIDE the form so the form

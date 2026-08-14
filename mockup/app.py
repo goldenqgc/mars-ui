@@ -325,20 +325,29 @@ def switches_list(
     request: Request,
     q: str = "",
     status: str = "ALL",
+    sort: str = "name",
     demo_empty: int = 0,
 ):
     # Filter the hardcoded list by q (matches name OR ip, case-insensitive)
-    # and status (exact match). Mockup logic only — real project will hit
-    # the device registry.
+    # and status (exact match). Sort by name | ip | status | last_seen.
+    # Mockup logic only — real project will hit the device registry.
     rows = SWITCHES
     if q:
         qn = q.strip().lower()
         rows = [s for s in rows if qn in s["name"].lower() or qn in s["ip"]]
     if status != "ALL":
         rows = [s for s in rows if s["status"] == status]
+    sort_key = {
+        "name":      lambda s: s["name"].lower(),
+        "ip":        lambda s: s["ip"],
+        "status":    lambda s: s["status"],
+        "last_seen": lambda s: s["last_seen"],
+    }.get(sort, lambda s: s["name"].lower())
+    rows = sorted(rows, key=sort_key)
     return render(request, "pages/switches_list.html", {
         "query": q,
         "selected_status": status,
+        "selected_sort": sort,
         "switches": rows,
         "demo_empty": demo_empty,
     })
