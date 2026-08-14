@@ -4,6 +4,7 @@
 {% block title %}Audit log · MARS NetHub{% endblock %}
 
 {% block content %}
+{% call ui.ui_breadcrumbs(items=[('Switches', '/switches'), ('Audit log', None)]) %}
 {% call ui.ui_page_header("Audit log", "Full audit trail · login, config changes, bulk operations, etc.") %}
   {{ ui.ui_button("Export CSV", variant="outline") }}
 {% endcall %}

@@ -5,7 +5,7 @@
 
 {% block content %}
 {% call ui.ui_page_header("Switches", "287 devices · 12 heartbeats timed out in the last minute") %}
-  {{ ui.ui_button("Refresh", variant="outline", hx_get="/switches/poll", hx_target="#switch-table-body", hx_swap="innerHTML") }}
+  {{ ui.ui_button("Refresh", variant="outline", title="Reload switch list", hx_get="/switches/poll", hx_target="#switch-table-body", hx_swap="innerHTML") }}
   {{ ui.ui_button("Add device", variant="default") }}
 {% endcall %}
 
@@ -20,15 +20,12 @@
         hx-target="#switch-table-wrap"
         hx-select="#switch-table-wrap"
         hx-swap="outerHTML"
-        hx-trigger="submit"
+        hx-trigger="input changed delay:280ms from:input[name=q], change changed delay:280ms from:select[name=status]"
         hx-push-url="true">
     {{ ui.ui_input("q", "Search (name / IP)", value=query, placeholder="e.g. sw-core-01 or 10.0.1.1") }}
     {{ ui.ui_select("status", "Status filter",
                     [("ALL","All"),("UP","UP"),("DOWN","DOWN"),("WARNING","WARNING"),("UNKNOWN","UNKNOWN")],
                     selected=selected_status) }}
-    {{ ui.ui_select("sort", "Sort by",
-                    [("name","Name"),("ip","IP"),("status","Status"),("last_seen","Last update")],
-                    selected=selected_sort) }}
     {{ ui.ui_button("Filter", variant="default", type="submit") }}
   </form>
   {# Empty-state demo is a separate link OUTSIDE the form so the form
@@ -62,15 +59,43 @@
 {% endcall %}
 
 {# ---- List section ---- #}
-<div id="switch-table-wrap">
+<div id="switch-table-wrap" aria-busy="false"
+     class="relative"
+     data-loading-skeleton="""<div class="absolute inset-0 z-10 grid place-items-center bg-background/60 backdrop-blur-sm rounded-md">
+       <div class="flex items-center gap-2 text-sm text-muted-foreground">
+         <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+         Loading…
+       </div>
+     </div>">
+  <div id="switch-table-wrap">
   {# Empty state fires when EITHER demo_empty=1 OR the server returned
      zero rows after filtering. The latter case covers "you searched for
      gibberish and got nothing back". #}
   {% if demo_empty or switches|length == 0 %}
     {% call ui.ui_card(title="Devices") %}
-      {{ ui.ui_empty_state(
-          "No matches — try other keywords" if query or selected_status != "ALL"
-          else "No devices yet") }}
+      {% if query or selected_status != "ALL" %}
+        <div class="flex flex-col items-center gap-3 py-12 text-center">
+          <svg class="h-10 w-10 text-muted-foreground opacity-50" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/>
+          </svg>
+          <div>
+            <h3 class="text-sm font-semibold">No matches found</h3>
+            <p class="mt-1 text-xs text-muted-foreground">Try a different search or clear filters.</p>
+          </div>
+          <a href="/switches" class="text-xs font-medium text-primary hover:underline">Clear all filters</a>
+        </div>
+      {% else %}
+        <div class="flex flex-col items-center gap-3 py-12 text-center">
+          <svg class="h-10 w-10 text-muted-foreground opacity-50" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 13h6m-3-3v6m-7 4h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+          </svg>
+          <div>
+            <h3 class="text-sm font-semibold">No devices yet</h3>
+            <p class="mt-1 text-xs text-muted-foreground">Add your first switch to start tracking.</p>
+          </div>
+          {{ ui.ui_button("Add first device", variant="default", size="sm") }}
+        </div>
+      {% endif %}
     {% endcall %}
   {% else %}
 
@@ -101,11 +126,11 @@
         {% call ui.ui_thead() %}
           {% call ui.ui_tr() %}
             {{ ui.ui_th("", class="w-10") }}
-            {{ ui.ui_th("Name") }}
-            {{ ui.ui_th("IP") }}
+            {{ ui.ui_th_sort("Name",        "name",      current_sort=selected_sort, current_dir=selected_dir, base_url="/switches", query="status=" + selected_status + "&q=" + query) }}
+            {{ ui.ui_th_sort("IP",          "ip",        current_sort=selected_sort, current_dir=selected_dir, base_url="/switches", query="status=" + selected_status + "&q=" + query) }}
             {{ ui.ui_th("Model") }}
-            {{ ui.ui_th("Status") }}
-            {{ ui.ui_th("Last update") }}
+            {{ ui.ui_th_sort("Status",      "status",    current_sort=selected_sort, current_dir=selected_dir, base_url="/switches", query="status=" + selected_status + "&q=" + query) }}
+            {{ ui.ui_th_sort("Last update", "last_seen", current_sort=selected_sort, current_dir=selected_dir, base_url="/switches", query="status=" + selected_status + "&q=" + query) }}
             {{ ui.ui_th(text="Actions", class="text-right") }}
           {% endcall %}
         {% endcall %}
@@ -137,10 +162,28 @@
 
   {% endif %}
 </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+  // Loading-skeleton overlay on the table area: show wrapper content while
+  // any descendant htmx request is in-flight, hide otherwise.
+  const tableWrap = document.querySelector('[data-loading-skeleton]');
+  if (tableWrap) {
+    const overlay = new DOMParser().parseHTML(tableWrap.dataset.loadingSkeleton || '<div></div>').body.firstElementChild;
+    if (overlay) {
+      overlay.style.display = 'none';
+      tableWrap.appendChild(overlay);
+      document.body.addEventListener('htmx:beforeRequest', (e) => {
+        if (tableWrap.contains(e.target)) overlay.style.display = '';
+      });
+      document.body.addEventListener('htmx:afterRequest', (e) => {
+        if (tableWrap.contains(e.target)) overlay.style.display = 'none';
+      });
+    }
+  }
+
   // Client-side only (per MARS_UI.md §6): link the select-all checkbox.
   const selectAll = document.getElementById('select-all');
   if (selectAll) {

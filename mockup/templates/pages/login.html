@@ -20,11 +20,11 @@
     {% endcall %}
 
     <form class="mt-4 flex flex-col gap-4" hx-post="/login" hx-target="#login-feedback" hx-swap="innerHTML">
-      {{ ui.ui_input("username", "Username", value="admin", placeholder="Enter username", required=True) }}
-      {{ ui.ui_input("password", "Password", type="password", value="", placeholder="Enter password", required=True) }}
+      {{ ui.ui_input("username", "Username", value="admin", placeholder="Enter username", required=True, aria_describedby="login-hint") }}
+      {{ ui.ui_input("password", "Password", type="password", value="", placeholder="Enter password", required=True, aria_describedby="login-hint") }}
 
-      <div id="login-feedback"></div>
-
+      <div id="login-feedback" aria-live="polite"></div>
+      <p id="login-hint" class="text-xs text-muted-foreground">Use <span class="font-mono">admin</span> / any password for the mockup demo.</p>
       {{ ui.ui_button("Sign in", variant="default", type="submit", hx_post="/login") }}
     </form>
 

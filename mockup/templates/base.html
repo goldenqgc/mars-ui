@@ -511,7 +511,24 @@
         function renderPageTabs(pages) {
           if (!portPageTabs) return;
           portPageTabs.innerHTML = '';
+          // smart list with ellipsis for large page counts
+          const list = [];
+          if (pages <= 7) {
+            for (let i = 1; i <= pages; i++) list.push(i);
+          } else {
+            list.push(1);
+            if (currentPage > 4) list.push('…');
+            for (let p = Math.max(2, currentPage - 1); p <= Math.min(pages - 1, currentPage + 2); p++) list.push(p);
+            if (currentPage < pages - 3) list.push('…');
+            list.push(pages);
+          }
           function tab(p, active) {
+            if (p === '…') {
+              const s = document.createElement('span');
+              s.textContent = '…';
+              s.className = 'inline-flex items-center justify-center h-8 w-8 text-sm text-muted-foreground';
+              return s;
+            }
             const b = document.createElement('button');
             b.type = 'button';
             b.dataset.portPageTab = p;
@@ -522,7 +539,7 @@
                 : 'text-muted-foreground hover:bg-muted hover:text-foreground');
             return b;
           }
-          for (let i = 1; i <= pages; i++) portPageTabs.appendChild(tab(i, i === currentPage));
+          for (const p of list) portPageTabs.appendChild(tab(p, p === currentPage));
         }
 
         if (portSearch) portSearch.addEventListener('input', () => { currentPage = 1; applyFilter(); });

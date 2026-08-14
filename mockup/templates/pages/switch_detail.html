@@ -4,6 +4,10 @@
 {% block title %}{{ sw.name }} · MARS NetHub{% endblock %}
 
 {% block content %}
+{% call ui.ui_breadcrumbs(items=[
+     ('Switches', '/switches'),
+     (sw.name, '/switches/' ~ sw.id|string),
+]) %}
 {% call ui.ui_page_header(sw.name, sw.ip + " · " + sw.model) %}
   {{ ui.ui_button("Back to list", variant="outline", hx_get="/switches", hx_target="body") }}
   {{ ui.ui_button("Reboot", variant="destructive",
