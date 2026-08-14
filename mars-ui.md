@@ -1124,7 +1124,7 @@ Click-to-edit keeps the table **read-only by default**: visual noise is minimal 
 | Per-row view↔edit toggle (deprecated v1.2.2, removed in v1.2.3) | 3 (Edit → input → Save) | N × 3 + select-all + apply | 2× table rows | No |
 | Always-edit inputs (spreadsheet mode) | 1 (typing) | N × 1 + select-all + apply | 1× table rows | No |
 | Sheet per row | 3 (Edit → sheet → Apply) | N × 3 + select-all | 1 hidden Sheet | No |
-| **Click-to-edit cell + staged buffer (v1.2.3+ canonical)** | **2** (click → input → blur) | **2** (Stage + Apply once) | **1× table rows** | **Yes** |
+| **Click-to-edit cell + staged buffer (v1.2.4 canonical)** | **2** (click → input → blur) | **2** (Stage + Apply once) | **1× table rows** | **Yes** |
 
 For "high-density operator tools with bulk operations", the staged-buffer pattern wins on every axis. The always-edit spreadsheet variant is faster per-edit but loses the at-a-glance scanability of a quiet table.
 ## 5. Operations scenarios: confirmations and config two-step flow
